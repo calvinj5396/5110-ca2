@@ -8,6 +8,7 @@ import argparse
 import os
 from datetime import datetime
 from sensor import EventCameraSensor
+from visualization import EventVisualizer
 
 
 def load_video(video_path: str, max_frames: int = None):
@@ -142,6 +143,18 @@ def main():
     parser.add_argument('--format', choices=['txt', 'npy'], default='txt',
                         help='事件数据保存格式')
 
+    # 可视化参数
+    parser.add_argument('--visualize', action='store_true',
+                        help='生成可视化视频')
+    parser.add_argument('--viz-style', choices=['red_blue', 'green_red', 'white', 'heatmap'],
+                        default='red_blue', help='可视化风格')
+    parser.add_argument('--accumulation-time', type=float, default=0.033,
+                        help='事件累积时间（秒），默认33ms')
+    parser.add_argument('--comparison', action='store_true',
+                        help='生成三栏对比视频')
+    parser.add_argument('--output-fps', type=float, default=None,
+                        help='输出视频帧率（默认=输入帧率）')
+
     args = parser.parse_args()
 
     # 打印配置
@@ -155,6 +168,9 @@ def main():
     print(f"  时间分辨率: {args.time_resolution * 1000} ms")
     print(f"  阈值噪声: ±{args.threshold_std}")
     print(f"  多进程: {'是' if args.multiprocessing else '否'}")
+    if args.visualize:
+        print(f"  可视化: 是 ({args.viz_style})")
+        print(f"  累积时间: {args.accumulation_time * 1000} ms")
 
     try:
         # 步骤1: 加载视频
@@ -195,6 +211,39 @@ def main():
             f.write(f"\n生成事件总数: {len(events)}\n")
 
         print(f"配置已保存: {config_file}")
+
+        # 步骤5: 生成可视化（如果需要）
+        if args.visualize and len(events) > 0:
+            print(f"\n{'=' * 60}")
+            print("生成可视化视频")
+            print(f"{'=' * 60}")
+
+            output_fps = args.output_fps if args.output_fps else fps
+
+            visualizer = EventVisualizer(
+                width=size[0],
+                height=size[1],
+                accumulation_time=args.accumulation_time,
+                style=args.viz_style,
+                decay=True
+            )
+
+            if args.comparison:
+                # 三栏对比视频
+                viz_file = os.path.join(output_dir, "comparison.mp4")
+                visualizer.create_comparison_video(
+                    events, frames, output_fps, viz_file
+                )
+            else:
+                # 标准叠加视频
+                viz_file = os.path.join(output_dir, "visualization.mp4")
+                visualizer.create_video(
+                    events, frames, output_fps, viz_file, show_progress=True
+                )
+
+            print(f"可视化视频已保存: {viz_file}")
+        elif args.visualize and len(events) == 0:
+            print("\n警告: 无法生成可视化，因为没有事件数据")
 
         print("\n" + "=" * 60)
         print("模拟完成！")
