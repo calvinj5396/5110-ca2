@@ -1,6 +1,6 @@
 """
-pixel.py - 像素级事件生成模块
-实现单个像素的事件检测逻辑
+pixel.py - Pixel-level event generation module
+Implements the event detection logic for a single pixel
 """
 
 import numpy as np
@@ -9,25 +9,25 @@ from typing import List, Dict, Tuple
 
 
 class PixelEventGenerator:
-    """单像素事件生成器"""
+    """Single-pixel event generator"""
 
     def __init__(self,
                  contrast_threshold: float = 0.3,
                  timestamp_resolution: float = 0.0001,
                  threshold_std: float = 0.03):
         """
-        初始化像素事件生成器
+        Initialize the pixel event generator
 
-        参数:
-            contrast_threshold: 对比度阈值（C值）
-            timestamp_resolution: 时间戳分辨率（秒）
-            threshold_std: 阈值不匹配噪声的标准差
+        Args:
+            contrast_threshold: Contrast threshold (C value)
+            timestamp_resolution: Timestamp resolution (seconds)
+            threshold_std: Standard deviation of threshold mismatch noise
         """
         self.base_threshold = contrast_threshold
         self.timestamp_resolution = timestamp_resolution
         self.threshold_std = threshold_std
 
-        # 为该像素生成独特的阈值（模拟阈值不匹配噪声）
+        # Generate unique thresholds for this pixel (simulate mismatch noise)
         self.pos_threshold = self.base_threshold + np.random.normal(0, threshold_std)
         self.neg_threshold = -self.base_threshold + np.random.normal(0, threshold_std)
 
@@ -37,25 +37,25 @@ class PixelEventGenerator:
                 x: int,
                 y: int) -> List[Dict]:
         """
-        处理单个像素的时间序列，生成事件
+        Process the time series of a single pixel and generate events
 
-        参数:
-            pixel_values: 该像素在各帧的DN值 (T,)
-            frame_timestamps: 对应的时间戳 (T,)
-            x, y: 像素坐标
+        Args:
+            pixel_values: DN values of the pixel across frames (T,)
+            frame_timestamps: Corresponding timestamps (T,)
+            x, y: Pixel coordinates
 
-        返回:
-            事件列表，每个事件包含 {x, y, t, polarity}
+        Returns:
+            A list of events, each event is a dict with {x, y, t, polarity}
         """
-        # 步骤1: DN值转换为对数亮度
+        # Step 1: Convert DN values to log intensity
         log_intensity = self._to_log_intensity(pixel_values)
 
-        # 步骤2: 时间插值，生成高分辨率时间序列
+        # Step 2: Time interpolation to generate high-resolution time series
         interp_timestamps, interp_intensity = self._interpolate(
             frame_timestamps, log_intensity
         )
 
-        # 步骤3: 事件检测
+        # Step 3: Event detection
         events = self._detect_events(
             interp_intensity,
             interp_timestamps,
@@ -66,22 +66,22 @@ class PixelEventGenerator:
 
     def _to_log_intensity(self, pixel_values: np.ndarray) -> np.ndarray:
         """
-        将DN值转换为对数亮度
+        Convert DN values to log intensity
 
-        参数:
-            pixel_values: DN值数组
+        Args:
+            pixel_values: DN value array
 
-        返回:
-            对数亮度数组
+        Returns:
+            Log intensity array
         """
-        # 添加小常数避免log(0)
+        # Add a small constant to avoid log(0)
         epsilon = 1e-3
         safe_values = np.maximum(pixel_values, epsilon)
 
-        # 归一化到[0, 1]范围（假设8位图像）
+        # Normalize to [0, 1] (assuming 8-bit image)
         normalized = safe_values / 255.0
 
-        # 计算对数
+        # Compute logarithm
         log_intensity = np.log(normalized + epsilon)
 
         return log_intensity
@@ -90,29 +90,29 @@ class PixelEventGenerator:
                      timestamps: np.ndarray,
                      values: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
-        对时间序列进行插值，生成高时间分辨率数据
+        Interpolate the time series to produce high-resolution data
 
-        参数:
-            timestamps: 原始时间戳
-            values: 原始值
+        Args:
+            timestamps: Original timestamps
+            values: Original values
 
-        返回:
-            (插值后的时间戳, 插值后的值)
+        Returns:
+            (Interpolated timestamps, Interpolated values)
         """
-        # 创建线性插值函数
+        # Create a linear interpolation function
         f = interp1d(timestamps, values, kind='linear',
                      fill_value='extrapolate', assume_sorted=True)
 
-        # 生成高分辨率时间戳
+        # Generate high-resolution timestamps
         t_start = timestamps[0]
         t_end = timestamps[-1]
         high_res_timestamps = np.arange(t_start, t_end, self.timestamp_resolution)
 
-        # 确保包含最后一个时间点
+        # Ensure the last timestamp is included
         if high_res_timestamps[-1] < t_end:
             high_res_timestamps = np.append(high_res_timestamps, t_end)
 
-        # 插值
+        # Perform interpolation
         interpolated_values = f(high_res_timestamps)
 
         return high_res_timestamps, interpolated_values
@@ -123,90 +123,89 @@ class PixelEventGenerator:
                        x: int,
                        y: int) -> List[Dict]:
         """
-        检测事件
+        Detect events
 
-        参数:
-            log_intensity: 对数亮度序列
-            timestamps: 时间戳序列
-            x, y: 像素坐标
+        Args:
+            log_intensity: Log intensity series
+            timestamps: Timestamp series
+            x, y: Pixel coordinates
 
-        返回:
-            事件列表
+        Returns:
+            A list of detected events
         """
         events = []
 
-        # 初始化参考亮度
+        # Initialize reference intensity
         reference_intensity = log_intensity[0]
 
         for i in range(1, len(log_intensity)):
             current_intensity = log_intensity[i]
             delta_log_I = current_intensity - reference_intensity
 
-            # 检测正事件 (ON/亮度增加)
+            # Detect positive events (ON / brightness increase)
             if delta_log_I >= self.pos_threshold:
                 events.append({
                     'x': x,
                     'y': y,
                     't': timestamps[i],
-                    'polarity': 1  # ON事件
+                    'polarity': 1  # ON event
                 })
-                # 更新参考亮度（重要！）
+                # Update reference intensity
                 reference_intensity = current_intensity
 
-            # 检测负事件 (OFF/亮度降低)
+            # Detect negative events (OFF / brightness decrease)
             elif delta_log_I <= self.neg_threshold:
                 events.append({
                     'x': x,
                     'y': y,
                     't': timestamps[i],
-                    'polarity': -1  # OFF事件
+                    'polarity': -1  # OFF event
                 })
-                # 更新参考亮度
+                # Update reference intensity
                 reference_intensity = current_intensity
 
         return events
 
 
 def test_pixel_generator():
-    """测试函数：模拟一个像素的亮度变化"""
-    print("=== 测试单像素事件生成 ===\n")
+    """Test function: simulate brightness changes for a single pixel"""
+    print("=== Test: Single Pixel Event Generation ===\n")
 
-    # 创建模拟数据：30帧，模拟亮度从暗到亮再到暗
+    # Simulated data: 30 frames, brightness increases then decreases
     num_frames = 30
     fps = 30
-    timestamps = np.arange(num_frames) / fps  # 0到1秒
+    timestamps = np.arange(num_frames) / fps  # 0 to 1 second
 
-    # 模拟亮度变化：正弦波
+    # Simulate brightness change: sinusoidal wave
     pixel_values = 128 + 100 * np.sin(2 * np.pi * timestamps)
     pixel_values = pixel_values.astype(np.uint8)
 
-    print(f"输入: {num_frames}帧, FPS={fps}")
-    print(f"时间范围: {timestamps[0]:.3f}s - {timestamps[-1]:.3f}s")
-    print(f"亮度范围: {pixel_values.min()} - {pixel_values.max()}\n")
+    print(f"Input: {num_frames} frames, FPS={fps}")
+    print(f"Time range: {timestamps[0]:.3f}s - {timestamps[-1]:.3f}s")
+    print(f"Brightness range: {pixel_values.min()} - {pixel_values.max()}\n")
 
-
-    # 创建生成器
+    # Create generator
     generator = PixelEventGenerator(
         contrast_threshold=0.2,
         timestamp_resolution=0.001  # 1ms
     )
 
-    # 生成事件
+    # Generate events
     events = generator.process(pixel_values, timestamps, x=10, y=20)
 
-    print(f"生成事件数: {len(events)}")
-    print(f"\n前5个事件:")
+    print(f"Generated events: {len(events)}")
+    print(f"\nFirst 5 events:")
     for i, event in enumerate(events[:5]):
         polarity_str = "ON " if event['polarity'] == 1 else "OFF"
         print(f"  {i + 1}. t={event['t']:.4f}s, ({event['x']},{event['y']}), {polarity_str}")
 
-    # 统计
+    # Statistics
     on_events = sum(1 for e in events if e['polarity'] == 1)
     off_events = sum(1 for e in events if e['polarity'] == -1)
-    print(f"\n事件统计:")
-    print(f"  ON事件:  {on_events}")
-    print(f"  OFF事件: {off_events}")
-    print(f"  总计:    {len(events)}")
+    print(f"\nEvent statistics:")
+    print(f"  ON events:  {on_events}")
+    print(f"  OFF events: {off_events}")
+    print(f"  Total:      {len(events)}")
 
 
 if __name__ == "__main__":
