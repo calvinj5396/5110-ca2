@@ -1,6 +1,6 @@
 """
-sensor.py - 传感器阵列模拟模块
-将单像素扩展到整个图像传感器
+sensor.py - Sensor array simulation module
+Extend single-pixel logic to the entire image sensor
 """
 
 import numpy as np
@@ -11,7 +11,7 @@ from functools import partial
 
 
 class EventCameraSensor:
-    """事件相机传感器阵列模拟器"""
+    """Event camera sensor array simulator"""
 
     def __init__(self,
                  contrast_threshold: float = 0.3,
@@ -20,14 +20,14 @@ class EventCameraSensor:
                  use_multiprocessing: bool = False,
                  num_workers: int = None):
         """
-        初始化传感器
+        Initialize the sensor
 
-        参数:
-            contrast_threshold: 对比度阈值
-            timestamp_resolution: 时间戳分辨率（秒）
-            threshold_std: 阈值不匹配噪声标准差
-            use_multiprocessing: 是否使用多进程加速
-            num_workers: 工作进程数（None=自动）
+        Args:
+            contrast_threshold: Contrast threshold
+            timestamp_resolution: Timestamp resolution (seconds)
+            threshold_std: Std dev of threshold mismatch noise
+            use_multiprocessing: Whether to accelerate with multiprocessing
+            num_workers: Number of worker processes (None = auto)
         """
         self.contrast_threshold = contrast_threshold
         self.timestamp_resolution = timestamp_resolution
@@ -35,7 +35,7 @@ class EventCameraSensor:
         self.use_multiprocessing = use_multiprocessing
         self.num_workers = num_workers or mp.cpu_count()
 
-        # 延迟导入，避免循环依赖
+        # Lazy import to avoid circular dependency
         from pixel import PixelEventGenerator
         self.PixelEventGenerator = PixelEventGenerator
 
@@ -44,35 +44,35 @@ class EventCameraSensor:
                  fps: float,
                  show_progress: bool = True) -> List[Dict]:
         """
-        模拟整个传感器的事件生成
+        Simulate event generation for the entire sensor
 
-        参数:
-            video_frames: 视频帧数组，shape=(T, H, W)
-            fps: 视频帧率
-            show_progress: 是否显示进度条
+        Args:
+            video_frames: Video frames array, shape=(T, H, W)
+            fps: Frame rate
+            show_progress: Whether to show a progress bar
 
-        返回:
-            事件列表，按时间戳排序
+        Returns:
+            List of events sorted by timestamp
         """
         num_frames, height, width = video_frames.shape
 
-        # 生成时间戳
+        # Generate frame timestamps
         frame_timestamps = np.arange(num_frames) / fps
 
         print(f"\n{'=' * 60}")
-        print(f"事件相机传感器模拟")
+        print(f"Event Camera Sensor Simulation")
         print(f"{'=' * 60}")
-        print(f"分辨率: {width} x {height}")
-        print(f"帧数: {num_frames}")
-        print(f"帧率: {fps} FPS")
-        print(f"时长: {frame_timestamps[-1]:.3f} 秒")
-        print(f"对比度阈值: {self.contrast_threshold}")
-        print(f"时间分辨率: {self.timestamp_resolution * 1000:.3f} ms")
+        print(f"Resolution: {width} x {height}")
+        print(f"Frames: {num_frames}")
+        print(f"Frame rate: {fps} FPS")
+        print(f"Duration: {frame_timestamps[-1]:.3f} s")
+        print(f"Contrast threshold: {self.contrast_threshold}")
+        print(f"Time resolution: {self.timestamp_resolution * 1000:.3f} ms")
         print(f"{'=' * 60}\n")
 
-        # 选择处理方法
+        # Choose processing method
         if self.use_multiprocessing and height * width > 1000:
-            print(f"使用多进程加速 (workers={self.num_workers})")
+            print(f"Using multiprocessing (workers={self.num_workers})")
             all_events = self._simulate_multiprocess(
                 video_frames, frame_timestamps, height, width, show_progress
             )
@@ -81,11 +81,11 @@ class EventCameraSensor:
                 video_frames, frame_timestamps, height, width, show_progress
             )
 
-        # 按时间戳排序
-        print("正在排序事件...")
+        # Sort by timestamp
+        print("Sorting events...")
         all_events.sort(key=lambda e: e['t'])
 
-        # 统计信息
+        # Statistics
         self._print_statistics(all_events, frame_timestamps[-1])
 
         return all_events
@@ -96,26 +96,26 @@ class EventCameraSensor:
                              height: int,
                              width: int,
                              show_progress: bool) -> List[Dict]:
-        """顺序处理（单进程）"""
+        """Sequential processing (single process)"""
         all_events = []
         total_pixels = height * width
 
-        # 创建进度条
-        pbar = tqdm(total=total_pixels, desc="处理像素") if show_progress else None
+        # Progress bar
+        pbar = tqdm(total=total_pixels, desc="Processing pixels") if show_progress else None
 
         for y in range(height):
             for x in range(width):
-                # 提取该像素的时间序列
+                # Extract the time series for this pixel
                 pixel_values = video_frames[:, y, x]
 
-                # 创建像素生成器
+                # Create pixel generator
                 generator = self.PixelEventGenerator(
                     contrast_threshold=self.contrast_threshold,
                     timestamp_resolution=self.timestamp_resolution,
                     threshold_std=self.threshold_std
                 )
 
-                # 生成事件
+                # Generate events
                 pixel_events = generator.process(
                     pixel_values, frame_timestamps, x, y
                 )
@@ -136,12 +136,12 @@ class EventCameraSensor:
                                height: int,
                                width: int,
                                show_progress: bool) -> List[Dict]:
-        """多进程并行处理"""
-        # 准备行数据
+        """Parallel processing with multiprocessing"""
+        # Prepare per-row data
         row_data = [(y, video_frames[:, y, :], frame_timestamps)
                     for y in range(height)]
 
-        # 创建处理函数
+        # Worker function with fixed parameters
         process_func = partial(
             _process_row_worker,
             contrast_threshold=self.contrast_threshold,
@@ -149,18 +149,18 @@ class EventCameraSensor:
             threshold_std=self.threshold_std
         )
 
-        # 并行处理
+        # Parallel execution
         with mp.Pool(processes=self.num_workers) as pool:
             if show_progress:
                 results = list(tqdm(
                     pool.imap(process_func, row_data),
                     total=height,
-                    desc="处理行"
+                    desc="Processing rows"
                 ))
             else:
                 results = pool.map(process_func, row_data)
 
-        # 合并结果
+        # Merge results
         all_events = []
         for row_events in results:
             all_events.extend(row_events)
@@ -168,34 +168,34 @@ class EventCameraSensor:
         return all_events
 
     def _print_statistics(self, events: List[Dict], duration: float):
-        """打印统计信息"""
+        """Print summary statistics"""
         print(f"\n{'=' * 60}")
-        print(f"模拟完成 - 统计信息")
+        print(f"Simulation Completed - Statistics")
         print(f"{'=' * 60}")
-        print(f"总事件数: {len(events):,}")
+        print(f"Total events: {len(events):,}")
 
         if len(events) > 0:
             on_events = sum(1 for e in events if e['polarity'] == 1)
             off_events = sum(1 for e in events if e['polarity'] == -1)
 
-            print(f"ON事件:  {on_events:,} ({on_events / len(events) * 100:.1f}%)")
-            print(f"OFF事件: {off_events:,} ({off_events / len(events) * 100:.1f}%)")
-            print(f"事件率: {len(events) / duration:.1f} events/sec")
+            print(f"ON events:  {on_events:,} ({on_events / len(events) * 100:.1f}%)")
+            print(f"OFF events: {off_events:,} ({off_events / len(events) * 100:.1f}%)")
+            print(f"Event rate: {len(events) / duration:.1f} events/sec")
 
-            # 时间范围
-            print(f"\n时间范围:")
-            print(f"  首个事件: {events[0]['t']:.6f} s")
-            print(f"  最后事件: {events[-1]['t']:.6f} s")
+            # Time range
+            print(f"\nTime span:")
+            print(f"  First event: {events[0]['t']:.6f} s")
+            print(f"  Last event:  {events[-1]['t']:.6f} s")
 
-            # 空间分布统计
-            x_coords = [e['x'] for e in events[:1000]]  # 采样前1000个
+            # Spatial distribution (sample first 1000 events)
+            x_coords = [e['x'] for e in events[:1000]]
             y_coords = [e['y'] for e in events[:1000]]
-            print(f"\n空间分布 (采样前1000个事件):")
-            print(f"  X范围: {min(x_coords)} - {max(x_coords)}")
-            print(f"  Y范围: {min(y_coords)} - {max(y_coords)}")
+            print(f"\nSpatial distribution (first 1000 events):")
+            print(f"  X range: {min(x_coords)} - {max(x_coords)}")
+            print(f"  Y range: {min(y_coords)} - {max(y_coords)}")
         else:
-            print("警告: 未生成任何事件！")
-            print("建议: 降低对比度阈值或检查输入视频")
+            print("Warning: No events were generated!")
+            print("Suggestion: Lower the contrast threshold or check the input video")
 
         print(f"{'=' * 60}\n")
 
@@ -205,14 +205,14 @@ def _process_row_worker(row_data: Tuple,
                         timestamp_resolution: float,
                         threshold_std: float) -> List[Dict]:
     """
-    多进程工作函数：处理一行像素
+    Multiprocessing worker: process one row of pixels
 
-    参数:
+    Args:
         row_data: (y, row_frames, timestamps)
-        其他参数同传感器配置
+        Other args are the same as the sensor configuration
 
-    返回:
-        该行的所有事件
+    Returns:
+        All events from this row
     """
     from pixel import PixelEventGenerator
 
@@ -236,45 +236,45 @@ def _process_row_worker(row_data: Tuple,
 
 
 def test_sensor():
-    """测试传感器模拟"""
+    """Test the sensor simulation"""
     print("\n" + "=" * 60)
-    print("测试传感器阵列模拟")
+    print("Testing sensor array simulation")
     print("=" * 60)
 
-    # 创建测试视频：移动的方块
+    # Create a test video: a moving square
     num_frames = 60
     height, width = 128, 128
     fps = 30.0
 
-    print(f"\n创建测试视频: {width}x{height}, {num_frames}帧, {fps}FPS")
+    print(f"\nCreating test video: {width}x{height}, {num_frames} frames, {fps} FPS")
 
     video_frames = np.zeros((num_frames, height, width), dtype=np.uint8)
 
-    # 添加移动的亮方块
+    # Add a moving bright square
     for i in range(num_frames):
-        # 方块从左移到右
+        # Square moves left to right
         x_pos = int(20 + (width - 60) * i / num_frames)
         video_frames[i, 40:80, x_pos:x_pos + 20] = 200
 
-    # 添加静止的背景
-    video_frames[:, :, :] += 50  # 背景亮度
+    # Add static background
+    video_frames[:, :, :] += 50  # Background brightness
 
-    print("视频特征: 移动的亮方块 + 静止背景")
+    print("Video features: Moving bright square + static background")
 
-    # 创建传感器
+    # Create sensor
     sensor = EventCameraSensor(
         contrast_threshold=0.2,
-        timestamp_resolution=0.001,  # 1ms
+        timestamp_resolution=0.001,  # 1 ms
         threshold_std=0.02,
-        use_multiprocessing=False  # 小图像用单进程
+        use_multiprocessing=False  # Single process for small images
     )
 
-    # 模拟
+    # Simulate
     events = sensor.simulate(video_frames, fps, show_progress=True)
 
-    # 保存事件数据（可选）
+    # Optionally print some events
     if len(events) > 0:
-        print("\n前10个事件:")
+        print("\nFirst 10 events:")
         for i, e in enumerate(events[:10]):
             pol_str = "ON " if e['polarity'] == 1 else "OFF"
             print(f"  {i + 1}. t={e['t']:.4f}s, ({e['x']:3d},{e['y']:3d}), {pol_str}")
