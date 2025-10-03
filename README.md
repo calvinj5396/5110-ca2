@@ -117,7 +117,7 @@ python main.py --input VIDEO_PATH [OPTIONS]
 ## 📂 Project Structure
 
 ```
-event_simulator/
+5110/
 ├── pixel.py              # Single pixel event generation
 ├── sensor.py             # Sensor array simulation
 ├── visualization.py      # Event visualization
